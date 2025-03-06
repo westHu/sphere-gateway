@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ApifoxUploaderProjectSetting">
+    <option name="apifoxAccessToken" value="APS-m05CZgl1BUl7HvnTWUK8YYp9zZlqKHi2" />
+    <option name="apifoxApiOverwriteMode" value="覆盖所有字段" />
+    <option name="apifoxServer" value="http://34.81.127.49:5634/" />
+    <option name="yapiTokens" value="" />
+  </component>
+</project>
