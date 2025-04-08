@@ -8,7 +8,7 @@ import cn.hutool.jwt.JWTUtil;
 import com.sphere.application.dto.ApiConfigDTO;
 import com.sphere.application.service.MerchantConfigService;
 import com.sphere.common.constants.GatewayConstant;
-import com.sphere.common.enums.ServiceCodeEnum;;
+import com.sphere.common.enums.ServiceCodeEnum;
 import com.sphere.common.exception.GatewayException;
 import com.sphere.common.exception.GatewayExceptionCode;
 import com.sphere.common.utils.RequestUtil;
@@ -23,22 +23,89 @@ import reactor.core.publisher.Mono;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
+/**
+ * 抽象请求服务类
+ * 提供请求处理的基础功能，包括参数验证、签名验证等
+ *
+ * @author sphere
+ * @since 1.0.0
+ */
 @Slf4j
 public abstract class AbstractRequestService {
 
     @Resource
-    MerchantConfigService merchantConfigService;
+    protected MerchantConfigService merchantConfigService;
 
     /**
-     * 校验参数、校验签名
+     * 验证请求参数和签名
+     * 包括以下验证：
+     * 1. 基本参数验证（host、contentType、authorization等）
+     * 2. 时间戳验证
+     * 3. JWT token验证
+     * 4. 签名验证
+     *
+     * @param serverWebExchange 请求上下文
+     * @param raw 原始请求数据
+     * @param method 方法名称（用于日志）
+     * @return 验证结果
      */
     protected Mono<String> verifyParameterThenSignature(ServerWebExchange serverWebExchange, String raw, String method) {
-        //参数设置到Attribute
+        // 设置请求参数到上下文
         serverWebExchange.getAttributes().put(GatewayConstant.REQUEST_PARAM, raw);
 
-        ServerHttpRequest request = serverWebExchange.getRequest();
+        // 获取请求信息
+        RequestContext requestContext = extractRequestContext(serverWebExchange, method);
+        
+        // 验证基本参数
+        validateBasicParameters(requestContext);
+        
+        // 验证时间戳
+        validateTimestamp(requestContext);
+        
+        // 验证JWT token
+        validateJwtToken(requestContext);
+        
+        // 验证签名
+        return validateSignature(serverWebExchange, raw, requestContext);
+    }
+
+    /**
+     * 请求上下文数据类
+     */
+    private static class RequestContext {
+        private final String path;
+        private final String hostName;
+        private final String contentType;
+        private final String authorization;
+        private final String timestamp;
+        private final String signature;
+        private final String partnerId;
+        private final ServiceCodeEnum serviceCode;
+        private final String method;
+
+        public RequestContext(String path, String hostName, String contentType, 
+                           String authorization, String timestamp, String signature, 
+                           String partnerId, ServiceCodeEnum serviceCode, String method) {
+            this.path = path;
+            this.hostName = hostName;
+            this.contentType = contentType;
+            this.authorization = authorization;
+            this.timestamp = timestamp;
+            this.signature = signature;
+            this.partnerId = partnerId;
+            this.serviceCode = serviceCode;
+            this.method = method;
+        }
+    }
+
+    /**
+     * 提取请求上下文信息
+     */
+    private RequestContext extractRequestContext(ServerWebExchange exchange, String method) {
+        ServerHttpRequest request = exchange.getRequest();
         String path = RequestUtil.getPath(request);
         String hostName = RequestUtil.getHost(request);
         String contentType = RequestUtil.getContentType(request);
@@ -46,114 +113,128 @@ public abstract class AbstractRequestService {
         String timestamp = RequestUtil.getTimestamp(request);
         String signature = RequestUtil.getSignature(request);
         String partnerId = RequestUtil.getPartnerId(request);
-        //String origin = RequestUtil.getOrigin(request);
-        //String externalId = RequestUtil.getExternalId(request);
-        //String channelId = RequestUtil.getChannelId(request);
-        ServiceCodeEnum serviceCodeEnum = ServiceCodeEnum.pathToEnum(path);
+        ServiceCodeEnum serviceCode = ServiceCodeEnum.pathToEnum(path);
+
+        logRequestInfo(method, authorization, timestamp, signature, partnerId);
+
+        return new RequestContext(path, hostName, contentType, authorization, 
+                                timestamp, signature, partnerId, serviceCode, method);
+    }
+
+    /**
+     * 记录请求信息日志
+     */
+    private void logRequestInfo(String method, String authorization, String timestamp, 
+                              String signature, String partnerId) {
         log.info("{} request authorization={}", method, authorization);
         log.info("{} request timestamp={}", method, timestamp);
         log.info("{} request signature={}", method, signature);
         log.info("{} request partnerId={}", method, partnerId);
-
-        //校验参数
-        //校验Host非空
-        if (StringUtils.isBlank(hostName)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST);
-        }
-
-        //校验时间戳非空
-        if (StringUtils.isBlank(contentType)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.CONTENT_TYPE);
-        }
-
-        //校验accessToken加签非空
-        if (StringUtils.isBlank(authorization)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.AUTHORIZATION);
-        }
-        //校验authorization的格式
-        if (!authorization.startsWith(GatewayConstant.BEARER)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.AUTHORIZATION);
-        }
-
-        //校验accessToken加签非空
-        if (StringUtils.isBlank(timestamp)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.X_TIMESTAMP);
-        }
-
-        //校验X_SIGNATURE加签非空
-        if (StringUtils.isBlank(signature)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.X_SIGNATURE);
-        }
-
-        //校验X_PARTNER_ID加签非空
-        if (StringUtils.isBlank(partnerId)) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.X_PARTNER_ID);
-        }
-
-        //校验时间戳格式
-        long seconds;
-        try {
-            LocalDateTime dateTime = LocalDateTime.parse(timestamp, GatewayConstant.DATE_TIME_FORMATTER);
-            LocalDateTime now = LocalDateTime.now();
-            seconds = Duration.between(dateTime, now).getSeconds();
-            log.info("{} Timestamp format dateTime={}, now={}, seconds={}", method, dateTime, now, seconds);
-        } catch (Exception e) {
-            log.error("{} Timestamp format exception", method, e);
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, GatewayConstant.X_TIMESTAMP);
-        }
-        if (seconds > 60 * 60) {
-            throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.BAD_REQUEST, "timestamp is expired.");
-        }
-
-
-        //查询商户配置 partnerId = clientID = merchantID
-        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getApiConfigDTO(partnerId, hostName);
-        return configDTOMono.flatMap(configDTO -> {
-            log.info("{} configDTO={}", method, JSONUtil.toJsonStr(configDTO));
-
-            if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())) {
-                log.error("{} Merchant config not exist", method);
-                throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED);
-                //return Mono.error(new GatewayException(serviceCodeEnum, ResponseExceptionCode.UNAUTHORIZED));
-            }
-
-            String merchantSecret = configDTO.getMerchantSecret();
-
-            //验证token 也就是Authorization
-            boolean validate;
-            String jwtToken = authorization.replace(GatewayConstant.BEARER, "").trim();
-            try {
-                JWT jwt = JWTUtil.parseToken(jwtToken);
-                String key = SecureUtil.sha256("sss");
-                validate = jwt.setKey(key.getBytes(StandardCharsets.UTF_8)).validate(0);
-            } catch (Exception e) {
-                log.error("{} JWT verify exception", method, e);
-                throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED, "Access Token Validate Failed");
-                //return Mono.error(new GatewayException(serviceCodeEnum, ResponseExceptionCode.UNAUTHORIZED, Access Token Validate Failed"));
-            }
-
-            if (!validate) {
-                log.error("{} JWT verify failed. jwtToken={}", method, jwtToken);
-                throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED, "Access Token Expiry");
-                //return Mono.error(new GatewayException(serviceCodeEnum, ResponseExceptionCode.UNAUTHORIZED, Access Token Expiry"));
-            }
-
-            //校验签名 对称签名
-            String stringToSign = SignUtil.stringToSign(path, jwtToken, raw, timestamp);
-            log.info("{} signature verify. merchantSecret={} \nstringToSign={}", method, merchantSecret, stringToSign);
-
-            String paysphereSign = SignUtil.hmacSHA512(stringToSign, merchantSecret);
-            if (!signature.equals(paysphereSign)) {
-                log.error("{} signature verify failed, \n paysphereSign={},\n merchantSign={}", method, paysphereSign, signature);
-                throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED, "Access Signature Invalid");
-                //return Mono.error(new GatewayException(ResponseExceptionCode.UNAUTHORIZED, serviceCodeEnum, Access Signature Invalid"));
-            }
-
-            log.info("{} signature verify pass", method);
-            return Mono.just(raw);
-        });
     }
 
+    /**
+     * 验证基本参数
+     */
+    private void validateBasicParameters(RequestContext context) {
+        if (StringUtils.isBlank(context.hostName)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST);
+        }
+
+        if (StringUtils.isBlank(context.contentType)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                     GatewayConstant.CONTENT_TYPE);
+        }
+
+        if (StringUtils.isBlank(context.authorization)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                     GatewayConstant.AUTHORIZATION);
+        }
+    }
+
+    /**
+     * 验证时间戳
+     */
+    private void validateTimestamp(RequestContext context) {
+        if (StringUtils.isBlank(context.timestamp)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                     GatewayConstant.X_TIMESTAMP);
+        }
+
+        try {
+            LocalDateTime requestTime = LocalDateTime.parse(context.timestamp, 
+                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            LocalDateTime now = LocalDateTime.now();
+            Duration duration = Duration.between(requestTime, now);
+
+            if (duration.toMinutes() > 5) {
+                log.error("{} request timestamp expired. requestTime={}, now={}", 
+                         context.method, requestTime, now);
+                throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                         "Timestamp expired");
+            }
+        } catch (Exception e) {
+            log.error("{} Invalid timestamp format: {}", context.method, context.timestamp);
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                     "Invalid timestamp format");
+        }
+    }
+
+    /**
+     * 验证JWT token
+     */
+    private void validateJwtToken(RequestContext context) {
+        if (StringUtils.isBlank(context.authorization)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.UNAUTHORIZED);
+        }
+
+        if (!context.authorization.startsWith(GatewayConstant.BEARER)) {
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.BAD_REQUEST, 
+                                     GatewayConstant.AUTHORIZATION);
+        }
+
+        String jwtToken = context.authorization.replace(GatewayConstant.BEARER, "").trim();
+        try {
+            JWT jwt = JWTUtil.parseToken(jwtToken);
+            String key = SecureUtil.sha256("sphere");
+            if (!jwt.setKey(key.getBytes(StandardCharsets.UTF_8)).verify()) {
+                log.error("{} request jwt verify failed", context.method);
+                throw new GatewayException(context.serviceCode, GatewayExceptionCode.UNAUTHORIZED);
+            }
+        } catch (Exception e) {
+            log.error("{} JWT verification failed", context.method, e);
+            throw new GatewayException(context.serviceCode, GatewayExceptionCode.UNAUTHORIZED);
+        }
+    }
+
+    /**
+     * 验证签名
+     */
+    private Mono<String> validateSignature(ServerWebExchange exchange, String raw, RequestContext context) {
+        return merchantConfigService.getApiConfigDTO(context.partnerId, context.hostName)
+                .flatMap(configDTO -> {
+                    if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())) {
+                        log.error("{} Merchant config not exist. merchantId={}", 
+                                context.method, context.partnerId);
+                        return Mono.error(new GatewayException(context.serviceCode, 
+                                     GatewayExceptionCode.UNAUTHORIZED));
+                    }
+
+                    String stringToSign = SignUtil.stringToSign(context.path, 
+                            context.authorization.replace(GatewayConstant.BEARER, "").trim(), 
+                            raw, context.timestamp);
+                    String calculatedSignature = SignUtil.hmacSHA512(stringToSign, 
+                            configDTO.getMerchantSecret());
+
+                    if (!calculatedSignature.equals(context.signature)) {
+                        log.error("{} request signature verify failed. expected={}, actual={}", 
+                                context.method, calculatedSignature, context.signature);
+                        return Mono.error(new GatewayException(context.serviceCode, 
+                                     GatewayExceptionCode.UNAUTHORIZED));
+                    }
+
+                    return Mono.just(raw);
+                });
+    }
 
     /**
      * WooCommerce 校验参数、校验签名

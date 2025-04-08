@@ -3,7 +3,7 @@ package com.sphere.infrastructure.integration.payment.dto;
 import lombok.Data;
 
 @Data
-public class SandboxMerchantConfigDTO {
+public class MerchantSandboxConfigDTO {
 
     /**
      * 商户ID

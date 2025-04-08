@@ -6,7 +6,7 @@ import com.sphere.common.constants.GatewayConstant;
 import com.sphere.infrastructure.cache.LocalCacheService;
 import com.sphere.infrastructure.integration.payment.PaymentServiceApi;
 import com.sphere.infrastructure.integration.payment.dto.MerchantConfigDTO;
-import com.sphere.infrastructure.integration.payment.dto.SandboxMerchantConfigDTO;
+import com.sphere.infrastructure.integration.payment.dto.MerchantSandboxConfigDTO;
 import com.sphere.infrastructure.integration.payment.param.MerchantIdParam;
 import com.sphere.api.vo.Result;
 import jakarta.annotation.Resource;
@@ -70,12 +70,12 @@ public class MerchantConfigService {
      * @param merchantId 商户ID
      * @return 沙箱环境商户配置
      */
-    public Mono<SandboxMerchantConfigDTO> getSandboxMerchantConfigDTO(String merchantId) {
+    public Mono<MerchantSandboxConfigDTO> getSandboxMerchantConfigDTO(String merchantId) {
         String cacheKey = GatewayConstant.SANDBOX_CACHE_MERCHANT_CONFIG + merchantId;
         log.debug("获取沙箱商户配置 - 商户ID: {}, 缓存键: {}", merchantId, cacheKey);
 
         // 从缓存获取
-        return getFromCache(cacheKey, SandboxMerchantConfigDTO.class)
+        return getFromCache(cacheKey, MerchantSandboxConfigDTO.class)
             .switchIfEmpty(getSandboxConfigFromRemote(merchantId));
     }
 
@@ -122,7 +122,7 @@ public class MerchantConfigService {
      * @param merchantId 商户ID
      * @return 沙箱环境配置
      */
-    private Mono<SandboxMerchantConfigDTO> getSandboxConfigFromRemote(String merchantId) {
+    private Mono<MerchantSandboxConfigDTO> getSandboxConfigFromRemote(String merchantId) {
         MerchantIdParam param = new MerchantIdParam();
         param.setMerchantId(merchantId);
 
@@ -177,7 +177,7 @@ public class MerchantConfigService {
      * @param config 沙箱商户配置
      * @return API配置
      */
-    private ApiConfigDTO convertToApiConfigDTO(SandboxMerchantConfigDTO config) {
+    private ApiConfigDTO convertToApiConfigDTO(MerchantSandboxConfigDTO config) {
         ApiConfigDTO apiConfigDTO = new ApiConfigDTO();
         apiConfigDTO.setPublicKey(config.getPublicKey());
         apiConfigDTO.setMerchantSecret(config.getMerchantSecret());
