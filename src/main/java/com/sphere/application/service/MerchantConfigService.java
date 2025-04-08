@@ -3,7 +3,7 @@ package com.sphere.application.service;
 import cn.hutool.json.JSONUtil;
 import com.sphere.application.dto.ApiConfigDTO;
 import com.sphere.common.constants.GatewayConstant;
-import com.sphere.infrastructure.cache.RedisService;
+import com.sphere.infrastructure.cache.LocalCacheService;
 import com.sphere.infrastructure.integration.payment.PaymentServiceApi;
 import com.sphere.infrastructure.integration.payment.dto.MerchantConfigDTO;
 import com.sphere.infrastructure.integration.payment.dto.SandboxMerchantConfigDTO;
@@ -34,11 +34,16 @@ public class MerchantConfigService {
      */
     private static final int CACHE_EXPIRE_SECONDS = 60;
 
+    /**
+     * 缓存名称
+     */
+    private static final String CACHE_NAME = "merchant_config";
+
     @Resource
     PaymentServiceApi paymentServiceApi;
 
     @Resource
-    RedisService redisService;
+    LocalCacheService localCacheService;
 
     /**
      * 获取商户配置信息
@@ -98,7 +103,7 @@ public class MerchantConfigService {
      * @return 配置信息
      */
     private <T> Mono<T> getFromCache(String cacheKey, Class<T> clazz) {
-        Object obj = redisService.get(cacheKey);
+        Object obj = localCacheService.get(CACHE_NAME, cacheKey);
         T configDTO = Optional.ofNullable(obj)
             .map(Object::toString)
             .map(e -> JSONUtil.toBean(e, clazz))
@@ -125,7 +130,7 @@ public class MerchantConfigService {
             .map(Result::parse)
             .map(config -> {
                 String cacheKey = GatewayConstant.SANDBOX_CACHE_MERCHANT_CONFIG + merchantId;
-                redisService.set(cacheKey, JSONUtil.toJsonStr(config), CACHE_EXPIRE_SECONDS);
+                localCacheService.put(CACHE_NAME, cacheKey, JSONUtil.toJsonStr(config));
                 log.debug("从远程服务获取沙箱配置成功并更新缓存 - 商户ID: {}", merchantId);
                 return config;
             });
@@ -145,7 +150,7 @@ public class MerchantConfigService {
             .map(Result::parse)
             .map(config -> {
                 String cacheKey = GatewayConstant.CACHE_MERCHANT_CONFIG + merchantId;
-                redisService.set(cacheKey, JSONUtil.toJsonStr(config), CACHE_EXPIRE_SECONDS);
+                localCacheService.put(CACHE_NAME, cacheKey, JSONUtil.toJsonStr(config));
                 log.debug("从远程服务获取生产环境配置成功并更新缓存 - 商户ID: {}", merchantId);
                 return config;
             });

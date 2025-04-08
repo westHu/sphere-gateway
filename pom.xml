@@ -82,27 +82,6 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!--redis-->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-
-        <!--基于Redis实现限流-->
-        <!--
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
-            <version>3.0.4</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>io.micrometer</groupId>
-                    <artifactId>micrometer-core</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        -->
-
         <!--hutool-->
         <dependency>
             <groupId>cn.hutool</groupId>
@@ -131,14 +110,14 @@
         </dependency>
 
         <!-- 引入Caffeine缓存 -->
-        <!--<dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-cache</artifactId>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
-        </dependency>-->
+        </dependency>
 
 
     </dependencies>

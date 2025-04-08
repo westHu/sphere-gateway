@@ -29,163 +29,184 @@ import java.util.Date;
 import java.util.Optional;
 
 /**
- * @author west
- * 自定义Filter里面应该是需要第一位拦截到的，先入日志  -99
- * 自定义Fileter order保持在100以内
+ * 网关访问日志过滤器
+ * 记录所有经过网关的请求和响应信息，包括：
+ * 1. 请求基本信息（路径、方法、IP等）
+ * 2. 请求头信息
+ * 3. 请求参数
+ * 4. 响应状态和耗时
+ * 5. 异常信息（如果有）
+ * 6. 慢请求监控
+ * 7. 异常请求告警
+ *
+ * @author sphere
+ * @since 1.0.0
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class AccessLogFilter implements GlobalFilter, Ordered {
 
+    /**
+     * 日志配置属性
+     */
     private final LogProperties logProperties;
 
+    /**
+     * 线程池任务执行器
+     */
     @Resource
     ThreadPoolTaskExecutor threadPoolTaskExecutor;
+
+    /**
+     * 主机配置
+     */
     @Resource
     HostConfiguration hostConfiguration;
 
     @Override
     public int getOrder() {
-        return -99;
+        return -99; // 确保日志过滤器最先执行
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        // 请求开关
-        log.info("accessLogFilter isOpen: {}", hostConfiguration.getOpen());
+        // 检查系统是否开放
+        log.debug("系统状态检查 - 是否开放: {}", hostConfiguration.getOpen());
         if (!Boolean.parseBoolean(hostConfiguration.getOpen())) {
+            log.warn("系统维护中 - 拒绝访问");
             throw new GatewayException("system is under maintenance and will be restored soon.");
         }
 
-        // 构建日志
+        // 构建并记录请求日志
         GatewayLog gatewayLog = parseGatewayLog(exchange);
-        log.info(">>> gateway request gatewayLog:{}", JSONUtil.toJsonStr(gatewayLog));
+        log.info("网关请求日志 => {}", JSONUtil.toJsonStr(gatewayLog));
 
-        // 计时
+        // 开始计时
         StopWatch stopWatch = new StopWatch();
         stopWatch.start(gatewayLog.getRequestPath());
 
-        // 请求
-        return chain.filter(exchange.mutate().build()).then(Mono.fromRunnable(() -> {
-            stopWatch.stop();
-            long executeTime = stopWatch.getTotalTimeMillis();
-            gatewayLog.setExecuteTime(executeTime);
-
-            // HttpCode
-            int code = Optional.of(exchange).map(ServerWebExchange::getResponse)
-                    .map(ServerHttpResponse::getStatusCode)
-                    .map(HttpStatusCode::value).orElse(-1);
-            gatewayLog.setCode(code);
-
-            // 商户ID
-            Object merchantIdObj = exchange.getAttributes().get(GatewayConstant.MERCHANT_ID);
-            String merchantId = Optional.ofNullable(merchantIdObj).map(Object::toString).orElse(null);
-            gatewayLog.setMerchantId(merchantId);
-
-            // 参数
-            Object requestParamObj = exchange.getAttributes().get(GatewayConstant.REQUEST_PARAM);
-            String requestParam = Optional.ofNullable(requestParamObj).map(Object::toString).orElse(null);
-            gatewayLog.setRequestParam(requestParam);
-
-            // 日志打印
-            log.info(">>> payspherepay gatewayLog={}. \nexecute={}", JSONUtil.toJsonStr(gatewayLog),
-                    StopWatchUtil.prettyPrint(stopWatch));
-
-            // 异步报告
-            threadPoolTaskExecutor.execute(() -> report(gatewayLog));
-        }));
+        // 执行过滤器链
+        return chain.filter(exchange)
+                .doFinally(signalType -> {
+                    // 停止计时
+                    stopWatch.stop();
+                    
+                    // 记录响应日志
+                    gatewayLog.setExecuteTime(stopWatch.getTotalTimeMillis());
+                    
+                    // 获取响应状态
+                    HttpStatusCode statusCode = exchange.getResponse().getStatusCode();
+                    assert statusCode != null;
+                    gatewayLog.setCode(statusCode.value());
+                    
+                    // 获取商户ID
+                    Object merchantIdObj = exchange.getAttributes().get(GatewayConstant.MERCHANT_ID);
+                    String merchantId = Optional.ofNullable(merchantIdObj).map(Object::toString).orElse(null);
+                    gatewayLog.setMerchantId(merchantId);
+                    
+                    // 获取请求参数
+                    Object requestParamObj = exchange.getAttributes().get(GatewayConstant.REQUEST_PARAM);
+                    String requestParam = Optional.ofNullable(requestParamObj).map(Object::toString).orElse(null);
+                    gatewayLog.setRequestParam(requestParam);
+                    
+                    // 异步处理日志记录和监控
+                    threadPoolTaskExecutor.execute(() -> {
+                        // 记录完整日志
+                        log.info("网关响应日志 => {}", JSONUtil.toJsonStr(gatewayLog));
+                        log.info("请求执行时间 => {}", StopWatchUtil.prettyPrint(stopWatch));
+                        
+                        // 检查慢请求
+                        checkSlowRequest(gatewayLog);
+                        
+                        // 检查异常请求
+                        checkErrorRequest(gatewayLog);
+                    });
+                });
     }
 
-
     /**
-     * 报告 含tg
+     * 检查慢请求
+     * 当请求执行时间超过阈值时，记录警告日志
+     *
+     * @param gatewayLog 网关日志对象
      */
-    private void report(GatewayLog gatewayLog) {
-        boolean reported = exceptionReport(gatewayLog);
-        if (!reported) {
-            slowApiReport(gatewayLog);
+    private void checkSlowRequest(GatewayLog gatewayLog) {
+        LogProperties.SlowApiAlarmConfiguration slowConfig = logProperties.getSlow();
+        if (slowConfig.isAlarm() && gatewayLog.getExecuteTime() > slowConfig.getThreshold()) {
+            log.warn("""
+                    慢请求告警 =>
+                    商户ID: {}
+                    请求路径: {}
+                    执行时间: {}ms
+                    阈值: {}ms
+                    """, 
+                    gatewayLog.getMerchantId(),
+                    gatewayLog.getRequestPath(),
+                    gatewayLog.getExecuteTime(),
+                    slowConfig.getThreshold());
         }
     }
 
     /**
-     * 异常报警
+     * 检查异常请求
+     * 当响应状态码不是成功状态时，记录错误日志
+     *
+     * @param gatewayLog 网关日志对象
      */
-    private boolean exceptionReport(GatewayLog gatewayLog) {
-        if (gatewayLog.getCode() == HttpStatus.OK.value()) {
-            return false;
+    private void checkErrorRequest(GatewayLog gatewayLog) {
+        if (gatewayLog.getCode() != HttpStatus.OK.value()) {
+            LogProperties.ApiAlarmConfiguration errorConfig = logProperties.getFail();
+            if (errorConfig.isAlarm() && 
+                (CollectionUtils.isEmpty(errorConfig.getExclusion()) || 
+                 !errorConfig.getExclusion().contains(gatewayLog.getCode()))) {
+                log.error("""
+                        异常请求告警 =>
+                        商户ID: {}
+                        请求路径: {}
+                        状态码: {}
+                        执行时间: {}ms
+                        """, 
+                        gatewayLog.getMerchantId(),
+                        gatewayLog.getRequestPath(),
+                        gatewayLog.getCode(),
+                        gatewayLog.getExecuteTime());
+            }
         }
-
-        LogProperties.ApiAlarmConfiguration apiAlarmConfiguration = logProperties.getFail();
-        if (!apiAlarmConfiguration.isAlarm()) {
-            return false;
-        }
-
-        if (!CollectionUtils.isEmpty(apiAlarmConfiguration.getExclusion())
-                && apiAlarmConfiguration.getExclusion().contains(gatewayLog.getCode())) {
-            return false;
-        }
-
-        String alarmContent = String.format("payspherepay Gateway api exception. MerchantID: [%s]. Request Ip : [%s] " +
-                        "Address : " +
-                        "[%s] Return code : [%d] Cost time : [%d] ms",
-                gatewayLog.getMerchantId(), gatewayLog.getIp(), gatewayLog.getRequestPath(), gatewayLog.getCode(),
-                gatewayLog.getExecuteTime());
-        log.info(alarmContent);
-        return true;
-    }
-
-
-    private void slowApiReport(GatewayLog gatewayLog) {
-        LogProperties.SlowApiAlarmConfiguration slowApiAlarmConfiguration = logProperties.getSlow();
-        long threshold = slowApiAlarmConfiguration.getThreshold();
-        if (gatewayLog.getExecuteTime() < threshold) {
-            return;
-        }
-
-        if (!slowApiAlarmConfiguration.isAlarm()) {
-            log.debug("Slow api alarm disabled.");
-            return;
-        }
-
-        String slowContent = String.format("payspherepay Api cost time too long. MerchantID: [%s]. Request Ip : [%s]. " +
-                        "Address : " +
-                        "[%s]. Cost time: [%d] ms",
-                gatewayLog.getMerchantId(), gatewayLog.getIp(), gatewayLog.getRequestPath(),
-                gatewayLog.getExecuteTime());
-        log.info(slowContent);
     }
 
     /**
-     * 获得当前请求分发的路由
-     */
-    private Route getGatewayRoute(ServerWebExchange exchange) {
-        return exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
-    }
-
-
-    /**
-     * 构建 GatewayLog
+     * 解析网关日志
+     * 从请求中提取关键信息构建日志对象
+     *
+     * @param exchange 请求交换对象
+     * @return 网关日志对象
      */
     private GatewayLog parseGatewayLog(ServerWebExchange exchange) {
         ServerHttpRequest request = exchange.getRequest();
-        String requestPath = request.getPath().pathWithinApplication().value();
-        Route route = getGatewayRoute(exchange);
-        String targetServer = Optional.ofNullable(route).map(Route::getId).orElse(null);
-        String ip = RequestUtil.getIpAddress(request);
-        String host = RequestUtil.getHost(request);
-        String methodValue = request.getMethod().name();
-
+        Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        
         GatewayLog gatewayLog = new GatewayLog();
-        gatewayLog.setTargetServer(targetServer);
-        gatewayLog.setHost(host);
-        gatewayLog.setRequestPath(requestPath);
-        gatewayLog.setMethod(methodValue);
+        
+        // 设置基本信息
+        gatewayLog.setRequestPath(request.getPath().pathWithinApplication().value());
+        gatewayLog.setMethod(request.getMethod().name());
         gatewayLog.setSchema(request.getURI().getScheme());
-        gatewayLog.setIp(ip);
+        gatewayLog.setIp(RequestUtil.getIpAddress(request));
+        gatewayLog.setHost(RequestUtil.getHost(request));
         gatewayLog.setRequestTime(new Date());
+        
+        // 设置目标服务器
+        if (route != null) {
+            gatewayLog.setTargetServer(route.getId());
+        }
+        
+        // 设置请求头
+        if (!CollectionUtils.isEmpty(request.getHeaders())) {
+            gatewayLog.setRequestHeader(JSONUtil.toJsonStr(request.getHeaders()));
+        }
+        
         return gatewayLog;
     }
-
 }
 

@@ -2,12 +2,14 @@ package com.sphere.infrastructure.config.log;
 
 import lombok.Data;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 
 @Data
 public class GatewayLog implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = -3205904134722576668L;
 
 
