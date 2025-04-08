@@ -137,7 +137,7 @@ public class GatewayConstant {
     /**
      * 默认时区 - 北京
      */
-    public static final ZoneId ZONE_ID = ZoneId.of("Asia/Beijing");
+    public static final ZoneId ZONE_ID = ZoneId.of("Asia/Shanghai");
 
     /**
      * ================ 环境相关常量 ================

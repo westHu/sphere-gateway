@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+
+# 测试环境特定配置
+logging:
+  level:
+    root: info 

@@ -7,15 +7,19 @@
     <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="pay-gateway"/>
     <property name="log_pattern"
               value="%d{yyyy-MM-dd HH:mm:ss.SSS Z} [%tid] [%thread] %-5level %logger{50}:%line %msg%n"/>
+    <property name="console_pattern" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"/>
 
     <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <pattern>${console_pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
     </appender>
 
     <!-- 异步控制台输出 -->
     <appender name="AsyncConsole" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
         <appender-ref ref="Console"/>
     </appender>
 
@@ -28,8 +32,26 @@
             <maxFileSize>1000MB</maxFileSize>
         </rollingPolicy>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <pattern>${log_pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
+    </appender>
+
+    <!-- 错误日志文件 -->
+    <appender name="ErrorLogFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <File>${LOG_HOME}/${APP_NAME}-error.log</File>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <FileNamePattern>${LOG_HOME}/%d{yyyy-MM-dd,aux}/${APP_NAME}-error.log.%d{yyyy-MM-dd}.%i.log</FileNamePattern>
+            <MaxHistory>30</MaxHistory>
+            <maxFileSize>1000MB</maxFileSize>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>${log_pattern}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
     </appender>
 
     <!--异步日志：二 使用 AspectLogbackAsyncAppender 配置异步 -->
@@ -41,10 +63,48 @@
         <appender-ref ref="SyncLogFile"/>
     </appender>
 
-    <root level="INFO">
-        <appender-ref ref="AsyncConsole" />
-        <appender-ref ref="AsyncLogFile" />
-    </root>
+    <!-- 异步错误日志 -->
+    <appender name="AsyncErrorLogFile" class="com.yomahub.tlog.core.enhance.logback.async.AspectLogbackAsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>512</queueSize>
+        <includeCallerData>true</includeCallerData>
+        <appender-ref ref="ErrorLogFile"/>
+    </appender>
+
+    <!-- 开发环境 -->
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="AsyncConsole"/>
+            <appender-ref ref="AsyncLogFile"/>
+            <appender-ref ref="AsyncErrorLogFile"/>
+        </root>
+        <logger name="org.springframework.cloud.gateway" level="DEBUG"/>
+    </springProfile>
+
+    <!-- 测试环境 -->
+    <springProfile name="test">
+        <root level="INFO">
+            <appender-ref ref="AsyncConsole"/>
+            <appender-ref ref="AsyncLogFile"/>
+            <appender-ref ref="AsyncErrorLogFile"/>
+        </root>
+    </springProfile>
+
+    <!-- 生产环境 -->
+    <springProfile name="prod">
+        <root level="WARN">
+            <appender-ref ref="AsyncLogFile"/>
+            <appender-ref ref="AsyncErrorLogFile"/>
+        </root>
+    </springProfile>
+
+    <!-- 框架日志级别控制 -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.hibernate" level="INFO"/>
+    <logger name="org.apache" level="INFO"/>
+    <logger name="com.netflix" level="WARN"/>
+    <logger name="org.apache.http" level="WARN"/>
+    <logger name="org.apache.http.wire" level="WARN"/>
 
 </configuration>
 

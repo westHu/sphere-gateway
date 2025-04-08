@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+# 生产环境特定配置
+logging:
+  level:
+    root: warn  # 生产环境使用更严格的日志级别 

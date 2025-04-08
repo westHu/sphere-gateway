@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: paysphere-gateway
+  profiles:
+    active: dev
+  cloud:
+    gateway:
+      httpclient:
+        pool:
+          maxIdleTime: 55000
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# 通用配置
+server:
+  shutdown: graceful
+  port: 8081  # 统一使用8081端口
+
+# 通用日志配置
+logging:
+  level:
+    root: info
+    org.springframework.cloud.gateway: DEBUG
+
+# 自定义配置
+app:
+  gateway:
+    host:
+      sandbox: sandbox-gateway-test.whooshpay.id
+      product: gateway-test.whooshpay.id 
