@@ -93,7 +93,7 @@ public abstract class AbstractRequestService {
         //校验时间戳格式
         long seconds;
         try {
-            LocalDateTime dateTime = LocalDateTime.parse(timestamp, GatewayConstant.DF_1);
+            LocalDateTime dateTime = LocalDateTime.parse(timestamp, GatewayConstant.DATE_TIME_FORMATTER);
             LocalDateTime now = LocalDateTime.now();
             seconds = Duration.between(dateTime, now).getSeconds();
             log.info("{} Timestamp format dateTime={}, now={}, seconds={}", method, dateTime, now, seconds);
@@ -107,7 +107,7 @@ public abstract class AbstractRequestService {
 
 
         //查询商户配置 partnerId = clientID = merchantID
-        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(partnerId, hostName);
+        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getApiConfigDTO(partnerId, hostName);
         return configDTOMono.flatMap(configDTO -> {
             log.info("{} configDTO={}", method, JSONUtil.toJsonStr(configDTO));
 
@@ -177,7 +177,7 @@ public abstract class AbstractRequestService {
         String merchantId = jsonObject.getStr("merchantId");
 
         //查询商户配置 WooCommercePayInRequestService
-        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(merchantId, hostName);
+        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getApiConfigDTO(merchantId, hostName);
         return configDTOMono.flatMap(configDTO -> {
             if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())) {
                 log.error("WooCommercePayInRequestService Merchant  config not exist");

@@ -4,7 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.json.JSONUtil;
 import com.sphere.common.exception.GatewayException;
 import com.sphere.common.exception.GatewayExceptionCode;
-import com.sphere.api.vo.BaseResponse;
+import com.sphere.api.vo.BaseResult;
 import com.sphere.common.utils.RequestUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -33,12 +33,26 @@ import static com.sphere.common.constants.GatewayConstant.MERCHANT_ID;
 import static com.sphere.common.constants.GatewayConstant.REQUEST_PARAM;
 
 /**
- * 自定义异常处理
+ * 自定义Web异常处理器
+ * 处理网关中的各种异常，包括：
+ * 1. 响应状态异常（如404）
+ * 2. 业务异常（GatewayException）
+ * 3. 其他系统异常
+ * 统一返回标准格式的错误响应
+ *
+ * @author sphere
+ * @since 1.0.0
  */
 @Slf4j
 public class CustomWebExceptionHandler extends DefaultErrorWebExceptionHandler {
 
-
+    /**
+     * 构造函数
+     *
+     * @param errorAttributes 错误属性
+     * @param errorProperties 错误配置
+     * @param applicationContext 应用上下文
+     */
     public CustomWebExceptionHandler(ErrorAttributes errorAttributes,
                                      ErrorProperties errorProperties,
                                      ApplicationContext applicationContext) {
@@ -46,7 +60,12 @@ public class CustomWebExceptionHandler extends DefaultErrorWebExceptionHandler {
     }
 
     /**
-     * error
+     * 获取错误属性
+     * 根据异常类型返回不同的错误响应
+     *
+     * @param request 请求对象
+     * @param options 错误属性选项
+     * @return 错误属性Map
      */
     @Override
     protected Map<String, Object> getErrorAttributes(ServerRequest request, ErrorAttributeOptions options) {
@@ -56,58 +75,60 @@ public class CustomWebExceptionHandler extends DefaultErrorWebExceptionHandler {
         String ip = RequestUtil.getIpAddress(httpRequest);
 
         Throwable error = super.getError(request);
-        log.error("gateway getErrorAttributes:", error);
+        log.error("网关异常处理 - 路径: {}, IP: {}, 错误: {}", path, ip, error.getMessage(), error);
 
-        BaseResponse response;
+        BaseResult response;
 
-        // Response异常
+        // 处理响应状态异常
         if (error instanceof ResponseStatusException responseStatusException) {
             HttpStatusCode statusCode = responseStatusException.getStatusCode();
-            log.error("gateway exception type: ResponseStatusException, statusCode={}", statusCode);
-            if (statusCode.equals(HttpStatus.NOT_FOUND)) { //URL错误
+            log.error("响应状态异常 - 状态码: {}", statusCode);
+            if (statusCode.equals(HttpStatus.NOT_FOUND)) {
                 response = response(GatewayExceptionCode.NOT_FOUND, null);
             } else {
-                GatewayExceptionCode exceptionCode = GatewayExceptionCode.SERVER_ERROR;
-                response = response(exceptionCode, error.getMessage());
+                response = response(GatewayExceptionCode.SERVER_ERROR, error.getMessage());
             }
-
         }
-
-        // 业务异常
+        // 处理业务异常
         else if (error instanceof GatewayException gatewayException) {
-            log.error("gateway exception type: GatewayException");
+            log.error("业务异常 - 异常码: {}", gatewayException.getExceptionCode());
             GatewayExceptionCode exceptionCode = gatewayException.getExceptionCode();
             response = response(exceptionCode, error.getMessage());
-
         }
-
-        // 其他异常
+        // 处理其他异常
         else {
-            log.error("gateway exception type: OtherException");
+            log.error("系统异常 - 类型: {}", error.getClass().getName());
             response = response(GatewayExceptionCode.SERVER_ERROR, error.getMessage());
         }
 
-        //商户ID
+        // 获取商户ID
         Object merchantIdObj = exchange.getAttributes().get(MERCHANT_ID);
         String merchantId = Optional.ofNullable(merchantIdObj).map(Object::toString).orElse("unknown");
 
-        //参数
+        // 获取请求参数
         Object requestParamObj = exchange.getAttributes().get(REQUEST_PARAM);
         String requestParam = Optional.ofNullable(requestParamObj).map(Object::toString).orElse("unknown");
 
-        //消息预警
-        String msg = "paysphere pay gateway exception => " +
-                "\nPath: " + path +
-                "\nIP: " + ip +
-                "\nMerchantId: " + merchantId +
-                "\nRequestParam: " + requestParam +
-                "\nError: " + error.getMessage();
+        // 记录详细错误日志
+        String msg = String.format("""
+                网关异常详情 =>
+                路径: %s
+                IP: %s
+                商户ID: %s
+                请求参数: %s
+                错误信息: %s""", 
+                path, ip, merchantId, requestParam, error.getMessage());
         log.error(msg);
+
         return BeanUtil.beanToMap(response);
     }
 
     /**
-     * routing
+     * 获取路由函数
+     * 配置错误处理的路由
+     *
+     * @param errorAttributes 错误属性
+     * @return 路由函数
      */
     @Override
     protected RouterFunction<ServerResponse> getRoutingFunction(ErrorAttributes errorAttributes) {
@@ -115,37 +136,49 @@ public class CustomWebExceptionHandler extends DefaultErrorWebExceptionHandler {
     }
 
     /**
-     * httpStatus
+     * 获取HTTP状态码
+     * 根据错误属性中的code字段确定HTTP状态码
+     *
+     * @param errorAttributes 错误属性
+     * @return HTTP状态码
      */
     @Override
     protected int getHttpStatus(Map<String, Object> errorAttributes) {
-        log.warn("getHttpStatus errorAttributes={}",  JSONUtil.toJsonStr(errorAttributes));
-        int statusCode = Optional.ofNullable(errorAttributes).map(e -> e.get(CODE))
+        log.debug("获取HTTP状态码 - 错误属性: {}", JSONUtil.toJsonStr(errorAttributes));
+        
+        int statusCode = Optional.ofNullable(errorAttributes)
+                .map(e -> e.get(CODE))
                 .map(String::valueOf)
                 .map(e -> e.substring(0, 3))
-                .map(Integer::parseInt).orElse(HttpStatus.INTERNAL_SERVER_ERROR.value());
+                .map(Integer::parseInt)
+                .orElse(HttpStatus.INTERNAL_SERVER_ERROR.value());
 
         try {
             return HttpStatus.valueOf(statusCode).value();
-
         } catch (Exception e) {
-            log.error("gateway getHttpStatus exception", e);
+            log.error("获取HTTP状态码异常", e);
             return HttpStatus.INTERNAL_SERVER_ERROR.value();
         }
     }
 
-
     /**
-     * response message
+     * 构建错误响应
+     * 根据异常码和错误消息构建标准响应对象
+     *
+     * @param gatewayExceptionCode 网关异常码
+     * @param errorMessage 错误消息
+     * @return 标准响应对象
      */
-    private BaseResponse response(GatewayExceptionCode gatewayExceptionCode, String errorMessage) {
+    private BaseResult response(GatewayExceptionCode gatewayExceptionCode, String errorMessage) {
+        // 处理错误消息
         errorMessage = StringUtils.isBlank(errorMessage) ? gatewayExceptionCode.getMessage() : errorMessage;
         if (errorMessage.contains("finishConnect")) {
             errorMessage = "Network congestion, please try again later";
         }
 
-        BaseResponse response = new BaseResponse();
-        response.setCode(gatewayExceptionCode.getCode());
+        // 构建响应对象
+        BaseResult response = new BaseResult();
+        response.setCode(Integer.parseInt(gatewayExceptionCode.getCode()));
         response.setMessage(errorMessage);
         return response;
     }

@@ -48,7 +48,7 @@ public class SandboxBalanceResponseGatewayFilter extends AbstractResponseGateway
         return (serverWebExchange, raw) -> {
             HttpHeaders headers = serverWebExchange.getResponse().getHeaders();
             headers.add(GatewayConstant.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
-            headers.add(GatewayConstant.X_TIMESTAMP, ZonedDateTime.of(LocalDateTime.now(), GatewayConstant.ZONE_ID).format(GatewayConstant.DF_1));
+            headers.add(GatewayConstant.X_TIMESTAMP, ZonedDateTime.of(LocalDateTime.now(), GatewayConstant.ZONE_ID).format(GatewayConstant.DATE_TIME_FORMATTER));
             headers.add(GatewayConstant.ORIGIN, GatewayConstant.HEADER_ORIGIN);
 
             String convert = sandboxBalanceResponseService.handlerResponse(serverWebExchange, raw);
