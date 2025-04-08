@@ -11,11 +11,6 @@ public class SandboxMerchantConfigDTO {
     private String merchantId;
 
     /**
-     * 商户号
-     */
-    private String merchantCode;
-
-    /**
      * 商户名称
      */
     private String merchantName;

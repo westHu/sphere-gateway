@@ -17,11 +17,6 @@ public class MerchantConfigDTO {
     private String merchantId;
 
     /**
-     * 商户号
-     */
-    private String merchantCode;
-
-    /**
      * 商户秘钥
      */
     private String merchantSecret;

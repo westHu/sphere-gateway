@@ -1,7 +1,7 @@
 package com.sphere.application.service;
 
 import cn.hutool.json.JSONUtil;
-import com.sphere.application.dto.IntersectionConfigDTO;
+import com.sphere.application.dto.ApiConfigDTO;
 import com.sphere.common.constants.GatewayConstant;
 import com.sphere.infrastructure.cache.RedisService;
 import com.sphere.infrastructure.integration.payment.PaymentServiceApi;
@@ -31,29 +31,27 @@ public class MerchantConfigService {
     /**
      * 取商户白名单
      */
-    public Mono<IntersectionConfigDTO> getIntersectionConfigDTO(String merchantId, String hostName) {
+    public Mono<ApiConfigDTO> getIntersectionConfigDTO(String merchantId, String hostName) {
         boolean isSandbox = hostName.contains(GatewayConstant.SANDBOX);
 
         if (isSandbox) {
             Mono<SandboxMerchantConfigDTO> mono = getSandboxMerchantConfigDTO(merchantId);
             return mono.map(configDTO -> {
-                IntersectionConfigDTO intersectionConfigDTO = new IntersectionConfigDTO();
-                intersectionConfigDTO.setPublicKey(configDTO.getPublicKey());
-                intersectionConfigDTO.setMerchantCode(configDTO.getMerchantCode());
-                intersectionConfigDTO.setMerchantSecret(configDTO.getMerchantSecret());
-                intersectionConfigDTO.setIpWhiteList(configDTO.getIpWhiteList());
-                return intersectionConfigDTO;
+                ApiConfigDTO apiConfigDTO = new ApiConfigDTO();
+                apiConfigDTO.setPublicKey(configDTO.getPublicKey());
+                apiConfigDTO.setMerchantSecret(configDTO.getMerchantSecret());
+                apiConfigDTO.setIpWhiteList(configDTO.getIpWhiteList());
+                return apiConfigDTO;
             });
         } else {
             Mono<MerchantConfigDTO> mono = getMerchantConfigDTO(merchantId);
             return mono.map(configDTO -> {
-                IntersectionConfigDTO intersectionConfigDTO = new IntersectionConfigDTO();
-                intersectionConfigDTO.setPublicKey(configDTO.getPublicKey());
-                intersectionConfigDTO.setMerchantCode(configDTO.getMerchantCode());
-                intersectionConfigDTO.setMerchantSecret(configDTO.getMerchantSecret());
-                intersectionConfigDTO.setExpiryDate(configDTO.getExpiryDate());
-                intersectionConfigDTO.setIpWhiteList(configDTO.getIpWhiteList());
-                return intersectionConfigDTO;
+                ApiConfigDTO apiConfigDTO = new ApiConfigDTO();
+                apiConfigDTO.setPublicKey(configDTO.getPublicKey());
+                apiConfigDTO.setMerchantSecret(configDTO.getMerchantSecret());
+                apiConfigDTO.setExpiryDate(configDTO.getExpiryDate());
+                apiConfigDTO.setIpWhiteList(configDTO.getIpWhiteList());
+                return apiConfigDTO;
             });
         }
     }

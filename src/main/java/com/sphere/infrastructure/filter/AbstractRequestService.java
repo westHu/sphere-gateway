@@ -5,7 +5,7 @@ import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import cn.hutool.jwt.JWT;
 import cn.hutool.jwt.JWTUtil;
-import com.sphere.application.dto.IntersectionConfigDTO;
+import com.sphere.application.dto.ApiConfigDTO;
 import com.sphere.application.service.MerchantConfigService;
 import com.sphere.common.constants.GatewayConstant;
 import com.sphere.common.enums.ServiceCodeEnum;;
@@ -107,26 +107,24 @@ public abstract class AbstractRequestService {
 
 
         //查询商户配置 partnerId = clientID = merchantID
-        Mono<IntersectionConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(partnerId, hostName);
+        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(partnerId, hostName);
         return configDTOMono.flatMap(configDTO -> {
             log.info("{} configDTO={}", method, JSONUtil.toJsonStr(configDTO));
 
-            if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())
-                    || StringUtils.isBlank(configDTO.getMerchantCode())) {
+            if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())) {
                 log.error("{} Merchant config not exist", method);
                 throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED);
                 //return Mono.error(new GatewayException(serviceCodeEnum, ResponseExceptionCode.UNAUTHORIZED));
             }
 
             String merchantSecret = configDTO.getMerchantSecret();
-            String merchantCode = configDTO.getMerchantCode();
 
             //验证token 也就是Authorization
             boolean validate;
             String jwtToken = authorization.replace(GatewayConstant.BEARER, "").trim();
             try {
                 JWT jwt = JWTUtil.parseToken(jwtToken);
-                String key = SecureUtil.sha256(merchantCode);
+                String key = SecureUtil.sha256("sss");
                 validate = jwt.setKey(key.getBytes(StandardCharsets.UTF_8)).validate(0);
             } catch (Exception e) {
                 log.error("{} JWT verify exception", method, e);
@@ -179,10 +177,9 @@ public abstract class AbstractRequestService {
         String merchantId = jsonObject.getStr("merchantId");
 
         //查询商户配置 WooCommercePayInRequestService
-        Mono<IntersectionConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(merchantId, hostName);
+        Mono<ApiConfigDTO> configDTOMono = merchantConfigService.getIntersectionConfigDTO(merchantId, hostName);
         return configDTOMono.flatMap(configDTO -> {
-            if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())
-                    || StringUtils.isBlank(configDTO.getMerchantCode())) {
+            if (Objects.isNull(configDTO) || StringUtils.isBlank(configDTO.getMerchantSecret())) {
                 log.error("WooCommercePayInRequestService Merchant  config not exist");
                 throw new GatewayException(serviceCodeEnum, GatewayExceptionCode.UNAUTHORIZED);
                 //return Mono.error(new GatewayException(serviceCodeEnum, ResponseExceptionCode.UNAUTHORIZED));
