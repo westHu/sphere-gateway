@@ -6,6 +6,9 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 
 import java.util.concurrent.TimeUnit;
 
@@ -29,6 +32,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Configuration
 @EnableCaching
+@EnableAutoConfiguration(exclude = {CacheAutoConfiguration.class})
 public class LocalCacheConfig {
 
     /**
@@ -38,6 +42,7 @@ public class LocalCacheConfig {
      * @return 配置好的缓存管理器
      */
     @Bean
+    @Primary
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
         cacheManager.setCaffeine(Caffeine.newBuilder()

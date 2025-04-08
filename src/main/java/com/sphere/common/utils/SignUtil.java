@@ -3,8 +3,8 @@ package com.sphere.common.utils;
 import com.sphere.common.exception.GatewayException;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -13,9 +13,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Security;
 import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 签名工具类
@@ -30,6 +33,10 @@ import java.security.spec.X509EncodedKeySpec;
  */
 @Slf4j
 public class SignUtil {
+
+    static {
+        Security.addProvider(new BouncyCastleProvider());
+    }
 
     /**
      * RSA密钥算法
@@ -64,7 +71,7 @@ public class SignUtil {
         }
 
         try {
-            byte[] privateKeys = Base64.decodeBase64(privateKeyStr.getBytes());
+            byte[] privateKeys = Base64.getDecoder().decode(privateKeyStr.getBytes(StandardCharsets.UTF_8));
             PKCS8EncodedKeySpec privateKeySpec = new PKCS8EncodedKeySpec(privateKeys);
             KeyFactory keyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
             PrivateKey privateKey = keyFactory.generatePrivate(privateKeySpec);
@@ -73,7 +80,7 @@ public class SignUtil {
             signature.initSign(privateKey);
             signature.update(content.getBytes(encode));
             byte[] signed = signature.sign();
-            return Base64.encodeBase64String(signed);
+            return Base64.getEncoder().encodeToString(signed);
         } catch (Exception e) {
             log.error("RSA签名失败: content={}, error={}", content, e.getMessage(), e);
             return null;
@@ -98,7 +105,7 @@ public class SignUtil {
         }
 
         try {
-            byte[] publicKeys = Base64.decodeBase64(publicKeyStr);
+            byte[] publicKeys = Base64.getDecoder().decode(publicKeyStr.getBytes(StandardCharsets.UTF_8));
             X509EncodedKeySpec publicKeySpec = new X509EncodedKeySpec(publicKeys);
             KeyFactory myKeyFactory = KeyFactory.getInstance(KEY_ALGORITHM);
             PublicKey publicKey = myKeyFactory.generatePublic(publicKeySpec);
@@ -106,7 +113,7 @@ public class SignUtil {
             Signature signature = Signature.getInstance(SIGNATURE_ALGORITHM);
             signature.initVerify(publicKey);
             signature.update(content.getBytes(encode));
-            return signature.verify(Base64.decodeBase64(signed));
+            return signature.verify(Base64.getDecoder().decode(signed));
         } catch (Exception e) {
             log.error("RSA验签失败: content={}, error={}", content, e.getMessage(), e);
             return false;

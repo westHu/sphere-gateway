@@ -101,7 +101,6 @@ spring:
 - TLog
 - Hutool
 - Guava
-- RocketMQ
 - Caffeine
 
 ## 监控指标

@@ -10,9 +10,8 @@ import org.springframework.context.annotation.Configuration;
  * 配置自定义的健康检查指标
  * 
  * 主要功能：
- * 1. Redis 连接健康检查
- * 2. 自定义业务健康检查
- * 3. 系统资源健康检查
+ * 1. 自定义业务健康检查
+ * 2. 系统资源健康检查
  * 
  * 健康检查说明：
  * 1. 检查关键组件的可用性
